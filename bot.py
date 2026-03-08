@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-SUPPORT HELPER BOT - ФИНАЛЬНАЯ ВЕРСИЯ БЕЗ КОНФЛИКТОВ
-Все проверено, можно запускать
+SUPPORT HELPER BOT - ПОЛНАЯ ВЕРСИЯ СО ВСЕМИ РОЛЯМИ
+Админ-панель: Выдать админку с выбором роли
+Роли: АДМИН, ГЛ АДМИН, ТЕХ.СПЕЦИАЛИСТ, СОВЛАДЕЛЕЦ, ВЛАДЕЛЕЦ
 """
 
 import asyncio
@@ -32,11 +33,9 @@ OWNER_TAG = "#крип"
 CHANNEL_LINK = "https://t.me/+arKuZnc9R9hhNDIx"
 # =================================
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация бота
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
@@ -46,7 +45,6 @@ DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
 def load_data(filename: str):
-    """Загрузка данных из JSON"""
     try:
         with open(DATA_DIR / f"{filename}.json", "r", encoding="utf-8") as f:
             return json.load(f)
@@ -56,7 +54,6 @@ def load_data(filename: str):
         return {}
 
 def save_data(filename: str, data):
-    """Сохранение данных в JSON"""
     with open(DATA_DIR / f"{filename}.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
@@ -80,7 +77,6 @@ if str(OWNER_ID) not in admins:
     save_data("admins", admins)
 
 def save_all():
-    """Сохранить все данные"""
     save_data("users", users)
     save_data("admins", admins)
     save_data("dialogs", dialogs)
@@ -91,42 +87,37 @@ def save_all():
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 def is_admin(user_id: int) -> bool:
-    """Проверка, является ли пользователь админом"""
     return str(user_id) in admins
 
 def is_senior_admin(user_id: int) -> bool:
-    """Проверка, является ли пользователь старшим админом"""
     if str(user_id) not in admins:
         return False
     role = admins[str(user_id)].get("role", "")
     return role in ["ГЛ АДМИН", "СОВЛАДЕЛЕЦ", "ВЛАДЕЛЕЦ"]
 
 def is_owner(user_id: int) -> bool:
-    """Проверка, является ли пользователь владельцем"""
     return user_id == OWNER_ID
 
 def is_banned(user_id: int) -> bool:
-    """Проверка, забанен ли пользователь"""
     return str(user_id) in banlist
 
 def get_user_name(user_id: int) -> str:
-    """Получить имя пользователя"""
     return users.get(str(user_id), {}).get("name", "Пользователь")
 
 def get_admin_tag(user_id: int) -> str:
-    """Получить тег админа"""
     return admins.get(str(user_id), {}).get("tag", "#unknown")
+
+def get_admin_role(user_id: int) -> str:
+    return admins.get(str(user_id), {}).get("role", "АДМИН")
 
 # ========== КЛАВИАТУРЫ ==========
 def main_menu() -> ReplyKeyboardMarkup:
-    """Главное меню пользователя"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(KeyboardButton("🎲 Позвать рандомно"))
     keyboard.add(KeyboardButton("🔍 Позвать админа (по тегу)"))
     return keyboard
 
 def admin_menu(user_id: int) -> ReplyKeyboardMarkup:
-    """Меню администратора"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(KeyboardButton("🎲 Подключиться рандомно"))
     keyboard.add(KeyboardButton("🔍 Подключиться по тегу"))
@@ -137,7 +128,6 @@ def admin_menu(user_id: int) -> ReplyKeyboardMarkup:
     return keyboard
 
 def admin_panel_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура админ-панели"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(KeyboardButton("📋 Список пользователей"))
     keyboard.add(KeyboardButton("📋 Список админов"))
@@ -151,28 +141,34 @@ def admin_panel_keyboard() -> ReplyKeyboardMarkup:
     return keyboard
 
 def cancel_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура с кнопкой отмены"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(KeyboardButton("❌ Отмена"))
     return keyboard
 
 def confirm_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура подтверждения"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(KeyboardButton("✅ Продолжить"))
     keyboard.add(KeyboardButton("❌ Отмена"))
     return keyboard
 
 def channel_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура с ссылкой на канал"""
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("🔔 Подписаться", url=CHANNEL_LINK))
     return keyboard
 
 def dialog_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для диалога"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(KeyboardButton("🔚 Завершить диалог"))
+    return keyboard
+
+def role_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(KeyboardButton("АДМИН"))
+    keyboard.add(KeyboardButton("ГЛ АДМИН"))
+    keyboard.add(KeyboardButton("ТЕХ.СПЕЦИАЛИСТ"))
+    keyboard.add(KeyboardButton("СОВЛАДЕЛЕЦ"))
+    keyboard.add(KeyboardButton("ВЛАДЕЛЕЦ"))
+    keyboard.add(KeyboardButton("❌ Отмена"))
     return keyboard
 
 # ========== КЛАССЫ СОСТОЯНИЙ ==========
@@ -192,10 +188,10 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast_button = State()
     waiting_for_remove_admin_id = State()
     waiting_for_remove_admin_reason = State()
+    in_dialog = State()  # ← ЭТО БЫЛО ПРОПУЩЕНО
 
 # ========== ТАЙМЕР ДЛЯ ОЧЕРЕДИ ==========
 async def queue_timeout(user_id: int):
-    """Таймер на 10 минут для очереди"""
     await asyncio.sleep(600)
     
     if str(user_id) in dialogs:
@@ -308,6 +304,17 @@ async def cmd_end(message: types.Message, state: FSMContext):
         
         await message.answer("✅ Диалог завершён.")
         await state.finish()
+        
+        if is_admin(user_id):
+            await message.answer(
+                "Меню администратора:",
+                reply_markup=admin_menu(user_id)
+            )
+        else:
+            await message.answer(
+                "Главное меню:",
+                reply_markup=main_menu()
+            )
         return
     
     elif str(user_id) in [v for v in dialogs.values()]:
@@ -332,6 +339,17 @@ async def cmd_end(message: types.Message, state: FSMContext):
             
             await message.answer("✅ Диалог завершён.")
             await state.finish()
+            
+            if is_admin(user_id):
+                await message.answer(
+                    "Меню администратора:",
+                    reply_markup=admin_menu(user_id)
+                )
+            else:
+                await message.answer(
+                    "Главное меню:",
+                    reply_markup=main_menu()
+                )
             return
     
     else:
@@ -811,15 +829,7 @@ async def process_give_admin_tag(message: types.Message, state: FSMContext):
     await state.update_data(admin_tag=tag)
     await AdminStates.waiting_for_role.set()
     
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(KeyboardButton("АДМИН"))
-    keyboard.add(KeyboardButton("ГЛ АДМИН"))
-    keyboard.add(KeyboardButton("ТЕХ.СПЕЦИАЛИСТ"))
-    keyboard.add(KeyboardButton("СОВЛАДЕЛЕЦ"))
-    keyboard.add(KeyboardButton("ВЛАДЕЛЕЦ"))
-    keyboard.add(KeyboardButton("❌ Отмена"))
-    
-    await message.answer("👑 Выберите роль:", reply_markup=keyboard)
+    await message.answer("👑 Выберите роль:", reply_markup=role_keyboard())
 
 @dp.message_handler(state=AdminStates.waiting_for_role)
 async def process_give_admin_role(message: types.Message, state: FSMContext):
