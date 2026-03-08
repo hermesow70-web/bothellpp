@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-SUPPORT HELPER BOT - ПОЛНАЯ ВЕРСИЯ СО ВСЕМИ РОЛЯМИ
-Админ-панель: Выдать админку с выбором роли
-Роли: АДМИН, ГЛ АДМИН, ТЕХ.СПЕЦИАЛИСТ, СОВЛАДЕЛЕЦ, ВЛАДЕЛЕЦ
-"""
-
 import asyncio
 import logging
 import json
@@ -66,7 +60,6 @@ pending_by_tag = load_data("pending_by_tag")
 banlist = load_data("banlist")
 complaints = load_data("complaints")
 
-# Добавляем владельца в админы если его нет
 if str(OWNER_ID) not in admins:
     admins[str(OWNER_ID)] = {
         "tag": OWNER_TAG,
@@ -106,9 +99,6 @@ def get_user_name(user_id: int) -> str:
 
 def get_admin_tag(user_id: int) -> str:
     return admins.get(str(user_id), {}).get("tag", "#unknown")
-
-def get_admin_role(user_id: int) -> str:
-    return admins.get(str(user_id), {}).get("role", "АДМИН")
 
 # ========== КЛАВИАТУРЫ ==========
 def main_menu() -> ReplyKeyboardMarkup:
@@ -188,7 +178,7 @@ class AdminStates(StatesGroup):
     waiting_for_broadcast_button = State()
     waiting_for_remove_admin_id = State()
     waiting_for_remove_admin_reason = State()
-    in_dialog = State()  # ← ЭТО БЫЛО ПРОПУЩЕНО
+    in_dialog = State()
 
 # ========== ТАЙМЕР ДЛЯ ОЧЕРЕДИ ==========
 async def queue_timeout(user_id: int):
@@ -613,6 +603,12 @@ async def admin_dialog_message(message: types.Message, state: FSMContext):
         
         await message.answer("✅ Диалог завершён.")
         await state.finish()
+        
+        if is_admin(admin_id):
+            await message.answer(
+                "Меню администратора:",
+                reply_markup=admin_menu(admin_id)
+            )
         return
     
     admin_tag = get_admin_tag(admin_id)
@@ -652,6 +648,17 @@ async def user_dialog_message(message: types.Message, state: FSMContext):
             "Если админ был к вам невежлив, груб и т.д., нажмите «Позвать админа» и введите тег: #крип, чтобы объяснить ситуацию."
         )
         await state.finish()
+        
+        if is_admin(user_id):
+            await message.answer(
+                "Меню администратора:",
+                reply_markup=admin_menu(user_id)
+            )
+        else:
+            await message.answer(
+                "Главное меню:",
+                reply_markup=main_menu()
+            )
         return
     
     user_name = get_user_name(user_id)
@@ -999,18 +1006,6 @@ async def process_ban_reason(message: types.Message, state: FSMContext):
         "date": datetime.now().isoformat(),
         "banned_by": message.from_user.id
     }
-    
-    if target_id in dialogs:
-        admin_id = dialogs[target_id]
-        del dialogs[target_id]
-        try:
-            await bot.send_message(
-                int(admin_id),
-                "🔚 Пользователь забанен, диалог завершён."
-            )
-        except:
-            pass
-    
     save_all()
     
     await message.answer(f"✅ Пользователь {target_id} забанен.\nПричина: {reason}")
