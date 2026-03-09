@@ -15,10 +15,6 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-# Импортируем данные из основного бота
-from bot import bot, users, admins, dialogs, waiting_queue, pending_by_tag, save_all
-from bot import is_admin, is_banned, get_user_name, get_admin_tag
-
 logger = logging.getLogger(__name__)
 
 # ========== КЛАВИАТУРЫ ==========
@@ -52,7 +48,7 @@ class DialogStates(StatesGroup):
     admin_waiting_choice = State()
 
 # ========== ТАЙМЕР ==========
-async def queue_timeout(user_id: int):
+async def queue_timeout(user_id: int, bot, dialogs, waiting_queue, save_all):
     await asyncio.sleep(600)
     
     if str(user_id) in dialogs:
@@ -72,7 +68,12 @@ async def queue_timeout(user_id: int):
             pass
 
 # ========== КНОПКИ ПОЛЬЗОВАТЕЛЯ ==========
-async def user_call_random(message: types.Message):
+async def user_call_random(
+    message: types.Message,
+    bot,
+    users, admins, dialogs, waiting_queue, save_all,
+    is_banned, get_user_name
+):
     user_id = message.from_user.id
     
     if is_banned(user_id):
@@ -92,8 +93,9 @@ async def user_call_random(message: types.Message):
         reply_markup=cancel_menu()
     )
     
-    asyncio.create_task(queue_timeout(user_id))
+    asyncio.create_task(queue_timeout(user_id, bot, dialogs, waiting_queue, save_all))
     
+    # Уведомляем всех админов
     for admin_id in admins.keys():
         try:
             await bot.send_message(
@@ -103,7 +105,10 @@ async def user_call_random(message: types.Message):
         except:
             pass
 
-async def user_call_by_tag(message: types.Message, state: FSMContext):
+async def user_call_by_tag(
+    message: types.Message, state: FSMContext,
+    is_banned, dialogs
+):
     user_id = message.from_user.id
     
     if is_banned(user_id):
@@ -120,7 +125,11 @@ async def user_call_by_tag(message: types.Message, state: FSMContext):
         reply_markup=cancel_menu()
     )
 
-async def process_admin_tag(message: types.Message, state: FSMContext):
+async def process_admin_tag(
+    message: types.Message, state: FSMContext,
+    bot, admins, dialogs, pending_by_tag, save_all,
+    get_user_name
+):
     user_id = message.from_user.id
     tag = message.text.strip()
     
@@ -164,7 +173,10 @@ async def process_admin_tag(message: types.Message, state: FSMContext):
         pass
 
 # ========== КНОПКИ АДМИНА ==========
-async def admin_dialog_list(message: types.Message):
+async def admin_dialog_list(
+    message: types.Message,
+    is_admin, admins, waiting_queue, pending_by_tag, get_user_name
+):
     admin_id = message.from_user.id
     
     if not is_admin(admin_id):
@@ -191,7 +203,10 @@ async def admin_dialog_list(message: types.Message):
     
     await message.answer(text, reply_markup=kb)
 
-async def admin_take_dialog(message: types.Message, state: FSMContext):
+async def admin_take_dialog(
+    message: types.Message, state: FSMContext,
+    is_admin, waiting_queue, pending_by_tag
+):
     admin_id = message.from_user.id
     
     if not is_admin(admin_id):
@@ -207,7 +222,11 @@ async def admin_take_dialog(message: types.Message, state: FSMContext):
         reply_markup=cancel_menu()
     )
 
-async def process_admin_choice(message: types.Message, state: FSMContext):
+async def process_admin_choice(
+    message: types.Message, state: FSMContext,
+    bot, admins, dialogs, waiting_queue, pending_by_tag, save_all,
+    is_admin, get_user_name, get_admin_tag
+):
     admin_id = message.from_user.id
     
     if message.text == "❌ Отмена":
@@ -261,12 +280,13 @@ async def process_admin_choice(message: types.Message, state: FSMContext):
     # Устанавливаем состояния
     await DialogStates.admin_in_dialog.set()
     await state.update_data(dialog_user_id=user_id)
-    
-    # Устанавливаем состояние пользователя
-    # Примечание: состояние пользователя будет установлено при первом сообщении
 
 # ========== ОБРАБОТКА ДИАЛОГОВ ==========
-async def admin_dialog_message(message: types.Message, state: FSMContext):
+async def admin_dialog_message(
+    message: types.Message, state: FSMContext,
+    bot, dialogs, save_all,
+    get_admin_tag
+):
     admin_id = message.from_user.id
     text = message.text
     
@@ -306,7 +326,11 @@ async def admin_dialog_message(message: types.Message, state: FSMContext):
     except:
         await message.answer("❌ Не удалось отправить сообщение пользователю.")
 
-async def user_dialog_message(message: types.Message, state: FSMContext):
+async def user_dialog_message(
+    message: types.Message, state: FSMContext,
+    bot, dialogs, save_all,
+    get_user_name
+):
     user_id = message.from_user.id
     text = message.text
     
@@ -347,59 +371,92 @@ async def user_dialog_message(message: types.Message, state: FSMContext):
     except:
         await message.answer("❌ Не удалось отправить сообщение администратору.")
 
-# ========== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ==========
-def register_handlers(dp: Dispatcher):
-    """Регистрирует все обработчики диалогов"""
-    
-    # Кнопки пользователя
-    dp.register_message_handler(
-        user_call_random,
-        lambda message: message.text == "🎲 Позвать рандомно"
-    )
-    dp.register_message_handler(
-        user_call_by_tag,
-        lambda message: message.text == "🔍 Позвать админа (по тегу)"
-    )
-    dp.register_message_handler(
-        process_admin_tag,
-        state=DialogStates.user_waiting_tag
-    )
-    
-    # Кнопки админа
-    dp.register_message_handler(
-        admin_dialog_list,
-        lambda message: message.text == "📋 Список диалогов"
-    )
-    dp.register_message_handler(
-        admin_take_dialog,
-        lambda message: message.text == "✅ Взять диалог"
-    )
-    dp.register_message_handler(
-        process_admin_choice,
-        state=DialogStates.admin_waiting_choice
-    )
-    
-    # Обработка диалогов
-    dp.register_message_handler(
-        admin_dialog_message,
-        state=DialogStates.admin_in_dialog
-    )
-    dp.register_message_handler(
-        user_dialog_message,
-        state=DialogStates.user_in_dialog
-    )
-    
-    # Кнопка "Назад"
-    dp.register_message_handler(
-        back_to_menu,
-        lambda message: message.text == "◀️ Назад"
-    )
-
-async def back_to_menu(message: types.Message):
-    """Возврат в меню"""
+# ========== НАЗАД ==========
+async def back_to_menu(
+    message: types.Message,
+    is_admin
+):
     user_id = message.from_user.id
     
     if is_admin(user_id):
         await message.answer("Меню:", reply_markup=admin_menu())
     else:
         await message.answer("Главное меню:", reply_markup=main_menu())
+
+# ========== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ==========
+def register_handlers(
+    dp: Dispatcher,
+    bot,
+    users, admins, dialogs, waiting_queue, pending_by_tag, save_all,
+    is_admin_func, is_banned_func, get_user_name_func, get_admin_tag_func
+):
+    """Регистрирует все обработчики диалогов"""
+    
+    # Кнопки пользователя
+    dp.register_message_handler(
+        lambda msg, state: user_call_random(
+            msg, bot, users, admins, dialogs, waiting_queue, save_all,
+            is_banned_func, get_user_name_func
+        ),
+        lambda message: message.text == "🎲 Позвать рандомно"
+    )
+    
+    dp.register_message_handler(
+        lambda msg, state: user_call_by_tag(
+            msg, state, is_banned_func, dialogs
+        ),
+        lambda message: message.text == "🔍 Позвать админа (по тегу)"
+    )
+    
+    dp.register_message_handler(
+        lambda msg, state: process_admin_tag(
+            msg, state, bot, admins, dialogs, pending_by_tag, save_all,
+            get_user_name_func
+        ),
+        state=DialogStates.user_waiting_tag
+    )
+    
+    # Кнопки админа
+    dp.register_message_handler(
+        lambda msg: admin_dialog_list(
+            msg, is_admin_func, admins, waiting_queue, pending_by_tag,
+            get_user_name_func
+        ),
+        lambda message: message.text == "📋 Список диалогов"
+    )
+    
+    dp.register_message_handler(
+        lambda msg, state: admin_take_dialog(
+            msg, state, is_admin_func, waiting_queue, pending_by_tag
+        ),
+        lambda message: message.text == "✅ Взять диалог"
+    )
+    
+    dp.register_message_handler(
+        lambda msg, state: process_admin_choice(
+            msg, state, bot, admins, dialogs, waiting_queue, pending_by_tag, save_all,
+            is_admin_func, get_user_name_func, get_admin_tag_func
+        ),
+        state=DialogStates.admin_waiting_choice
+    )
+    
+    # Обработка диалогов
+    dp.register_message_handler(
+        lambda msg, state: admin_dialog_message(
+            msg, state, bot, dialogs, save_all, get_admin_tag_func
+        ),
+        state=DialogStates.admin_in_dialog
+    )
+    
+    dp.register_message_handler(
+        lambda msg, state: user_dialog_message(
+            msg, state, bot, dialogs, save_all, get_user_name_func
+        ),
+        state=DialogStates.user_in_dialog
+    )
+    
+    # Кнопка "Назад"
+    dp.register_message_handler(
+        lambda msg: back_to_menu(msg, is_admin_func),
+        lambda message: message.text == "◀️ Назад"
+    )
