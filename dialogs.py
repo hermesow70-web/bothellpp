@@ -3,7 +3,7 @@
 
 """
 Модуль диалогов - ПОЛНОСТЬЮ РАБОЧИЙ
-Сообщения передаются в обе стороны
+Обычные админы могут общаться с пользователями
 """
 
 import asyncio
@@ -92,6 +92,7 @@ async def user_call_random(
     
     asyncio.create_task(queue_timeout(user_id, bot, dialogs, waiting_queue, save_all))
     
+    # Уведомляем ВСЕХ админов (и обычных, и ГЛ)
     for admin_id in admins.keys():
         try:
             await bot.send_message(
@@ -161,6 +162,7 @@ async def process_admin_tag(
     await message.answer(f"✅ Запрос отправлен админу {tag}.")
     await state.finish()
     
+    # Уведомляем ТОЛЬКО этого админа
     try:
         await bot.send_message(
             int(admin_id),
@@ -187,7 +189,7 @@ async def admin_dialog_list(
             text += f"{i}. {get_user_name(uid)}\n"
     
     if str(admin_id) in pending_by_tag and pending_by_tag[str(admin_id)]:
-        text += "\n🔹 **Вызовы по тегу:**\n"
+        text += "\n🔹 **Вызовы по тегу (для вас):**\n"
         for i, uid in enumerate(pending_by_tag[str(admin_id)], 1):
             text += f"{i}. {get_user_name(uid)}\n"
     
@@ -241,9 +243,11 @@ async def process_admin_choice(
     
     user_id = None
     
+    # Сначала проверяем рандомную очередь
     if index < len(waiting_queue):
         user_id = waiting_queue.pop(index)
     else:
+        # Если не нашли, проверяем очередь по тегу для этого админа
         tag_index = index - len(waiting_queue)
         if str(admin_id) in pending_by_tag and tag_index < len(pending_by_tag[str(admin_id)]):
             user_id = pending_by_tag[str(admin_id)].pop(tag_index)
@@ -305,7 +309,11 @@ async def handle_all_messages(
             except:
                 pass
             
-            await message.answer("✅ Диалог завершён.")
+            await message.answer(
+                "✅ Диалог завершён.\n\n"
+                "Если админ был к вам невежлив, груб или нарушил правила, "
+                "напишите #крип и опишите ситуацию. Ваша жалоба будет рассмотрена."
+            )
             await message.answer("Главное меню:", reply_markup=main_menu())
             return
         
@@ -332,7 +340,9 @@ async def handle_all_messages(
                 try:
                     await bot.send_message(
                         user_id_in_dialog,
-                        "🔚 Администратор завершил диалог."
+                        "🔚 Администратор завершил диалог.\n\n"
+                        "Если админ был к вам невежлив, груб или нарушил правила, "
+                        "напишите #крип и опишите ситуацию. Ваша жалоба будет рассмотрена."
                     )
                 except:
                     pass
@@ -400,7 +410,7 @@ def register_handlers(
         state=DialogStates.user_waiting_tag
     )
     
-    # Кнопки админа
+    # Кнопки админа (доступны и обычным админам, и ГЛ)
     dp.register_message_handler(
         lambda msg: admin_dialog_list(
             msg, is_admin_func, admins, waiting_queue, pending_by_tag,
@@ -431,10 +441,9 @@ def register_handlers(
     )
     
     # Универсальный обработчик для всех сообщений в диалогах
-    # Этот обработчик будет ловить все сообщения, которые не попали в другие хендлеры
     dp.register_message_handler(
         lambda msg: handle_all_messages(
             msg, bot, dialogs, save_all,
             is_admin_func, get_user_name_func, get_admin_tag_func
         )
-    )
+            )
