@@ -79,6 +79,9 @@ def is_gl_admin(user_id: int) -> bool:
         return False
     return admins[str(user_id)].get("role") == "ГЛ.АДМИН"
 
+def is_owner(user_id: int) -> bool:
+    return user_id == OWNER_ID
+
 def is_banned(user_id: int) -> bool:
     return str(user_id) in banlist
 
@@ -125,7 +128,6 @@ async def cmd_start(message: types.Message):
         await message.answer("❌ Вы забанены.")
         return
     
-    # Регистрируем нового пользователя
     if str(user_id) not in users:
         users[str(user_id)] = {
             "name": message.from_user.full_name,
@@ -134,7 +136,6 @@ async def cmd_start(message: types.Message):
         }
         save_all()
         
-        # Приветствие для новых пользователей
         await message.answer(
             "👋 *Здравствуй, хочешь тёплого общения? Внимания?*\n\n"
             "❌ *ЗАБУДЬ ДРУГИХ БОТОВ!*\n"
@@ -145,17 +146,14 @@ async def cmd_start(message: types.Message):
             parse_mode="Markdown"
         )
         
-        # Второе сообщение с подпиской
         await message.answer(
             "Если не сложно подпишись на наш канал, это НЕОБЯЗАТЕЛЬНО но нам будет приятно)",
             reply_markup=channel_keyboard()
         )
     
-    # Проверяем, есть ли активный диалог
     if str(user_id) in dialogs:
         admin_id = dialogs[str(user_id)]
         if admin_id not in admins:
-            # Если админа больше нет, удаляем диалог
             del dialogs[str(user_id)]
             save_all()
         else:
@@ -174,11 +172,9 @@ async def cmd_start(message: types.Message):
 # ========== КОМАНДА /END ==========
 @dp.message_handler(commands=['end'])
 async def cmd_end(message: types.Message):
-    """Закончить свой диалог"""
     user_id = message.from_user.id
     user_id_str = str(user_id)
     
-    # Проверяем, есть ли пользователь в диалоге как пользователь
     if user_id_str in dialogs:
         admin_id = int(dialogs[user_id_str])
         del dialogs[user_id_str]
@@ -200,7 +196,6 @@ async def cmd_end(message: types.Message):
             await message.answer("Главное меню:", reply_markup=main_menu())
         return
     
-    # Проверяем, есть ли пользователь в диалоге как админ
     for uid, aid in dialogs.items():
         if aid == user_id_str:
             del dialogs[uid]
@@ -220,13 +215,12 @@ async def cmd_end(message: types.Message):
     
     await message.answer("❌ У вас нет активного диалога.")
 
-# ========== КОМАНДА /ENDO (ДЛЯ ГЛ.АДМИНА) ==========
+# ========== КОМАНДА /ENDO ==========
 @dp.message_handler(commands=['endo'])
 async def cmd_endo(message: types.Message):
-    """Закончить диалог админа по его ID"""
     user_id = message.from_user.id
     
-    if not is_gl_admin(user_id) and user_id != OWNER_ID:
+    if not is_gl_admin(user_id) and not is_owner(user_id):
         await message.answer("❌ Только для ГЛ.АДМИНА.")
         return
     
@@ -237,7 +231,6 @@ async def cmd_endo(message: types.Message):
     
     target_admin_id = args[0]
     
-    # Ищем диалог этого админа
     user_to_remove = None
     for uid, aid in dialogs.items():
         if aid == target_admin_id:
@@ -248,11 +241,9 @@ async def cmd_endo(message: types.Message):
         await message.answer("❌ У этого админа нет активного диалога.")
         return
     
-    # Удаляем диалог
     del dialogs[user_to_remove]
     save_all()
     
-    # Уведомляем админа
     try:
         await bot.send_message(
             int(target_admin_id),
@@ -261,7 +252,6 @@ async def cmd_endo(message: types.Message):
     except:
         pass
     
-    # Уведомляем пользователя
     try:
         await bot.send_message(
             int(user_to_remove),
@@ -285,7 +275,7 @@ async def cmd_help(message: types.Message):
         text += "\n👑 **Команды администратора:**\n"
         text += "`/admin` - Панель администратора\n"
     
-    if is_gl_admin(user_id) or user_id == OWNER_ID:
+    if is_gl_admin(user_id) or is_owner(user_id):
         text += "\n👑👑 **Команды ГЛ.АДМИНА:**\n"
         text += "`/endo [ID]` - Завершить диалог админа\n"
         text += "`/list` - Список пользователей\n"
@@ -313,16 +303,16 @@ async def cmd_admin(message: types.Message):
         "`/adlist` - список всех админов\n"
     )
     
-    if is_gl_admin(user_id) or user_id == OWNER_ID:
+    if is_gl_admin(user_id) or is_owner(user_id):
         text += (
             "\n👑 **Команды ГЛ.АДМИНА:**\n\n"
             "`/setadmin [ID] [тег] [роль]` - выдать админку\n"
             "   Роли: `АДМИН` или `ГЛ.АДМИН`\n"
             "   Пример: `/setadmin 123456789 #дил АДМИН`\n\n"
             "`/deladmin [ID]` - снять админа\n"
-            "`/ban [ID] [причина]` - забанить пользователя\n"
+            "`/ban [ID] [причина]` - забанить\n"
             "`/unban [ID]` - разбанить\n"
-            "`/all [текст]` - рассылка всем\n"
+            "`/all [текст]` - рассылка\n"
             "`/endo [ID]` - завершить диалог админа"
         )
     
@@ -333,7 +323,7 @@ async def cmd_admin(message: types.Message):
 async def cmd_setadmin(message: types.Message):
     user_id = message.from_user.id
     
-    if not is_gl_admin(user_id) and user_id != OWNER_ID:
+    if not is_gl_admin(user_id) and not is_owner(user_id):
         await message.answer("❌ Нет прав.")
         return
     
@@ -352,7 +342,6 @@ async def cmd_setadmin(message: types.Message):
         await message.answer("❌ Пользователь не найден.")
         return
     
-    # Проверяем уникальность тега
     for data in admins.values():
         if data.get("tag") == tag:
             await message.answer("❌ Такой тег уже существует.")
@@ -367,7 +356,6 @@ async def cmd_setadmin(message: types.Message):
     
     await message.answer(f"✅ Админка выдана!\nID: {target_id}\nТег: {tag}\nРоль: {role}")
     
-    # Уведомляем нового админа
     try:
         await bot.send_message(
             int(target_id),
@@ -381,7 +369,7 @@ async def cmd_setadmin(message: types.Message):
 async def cmd_deladmin(message: types.Message):
     user_id = message.from_user.id
     
-    if not is_gl_admin(user_id) and user_id != OWNER_ID:
+    if not is_gl_admin(user_id) and not is_owner(user_id):
         await message.answer("❌ Нет прав.")
         return
     
@@ -406,7 +394,6 @@ async def cmd_deladmin(message: types.Message):
     
     await message.answer(f"✅ Админ {target_id} ({tag}) удалён.")
     
-    # Уведомляем удаленного админа
     try:
         await bot.send_message(
             int(target_id),
@@ -464,7 +451,7 @@ async def cmd_list(message: types.Message):
 async def cmd_ban(message: types.Message):
     user_id = message.from_user.id
     
-    if not is_gl_admin(user_id) and user_id != OWNER_ID:
+    if not is_gl_admin(user_id) and not is_owner(user_id):
         await message.answer("❌ Нет прав.")
         return
     
@@ -507,7 +494,7 @@ async def cmd_ban(message: types.Message):
 async def cmd_unban(message: types.Message):
     user_id = message.from_user.id
     
-    if not is_gl_admin(user_id) and user_id != OWNER_ID:
+    if not is_gl_admin(user_id) and not is_owner(user_id):
         await message.answer("❌ Нет прав.")
         return
     
@@ -540,7 +527,7 @@ async def cmd_unban(message: types.Message):
 async def cmd_all(message: types.Message):
     user_id = message.from_user.id
     
-    if not is_gl_admin(user_id) and user_id != OWNER_ID:
+    if not is_gl_admin(user_id) and not is_owner(user_id):
         await message.answer("❌ Нет прав.")
         return
     
@@ -568,7 +555,7 @@ async def cmd_all(message: types.Message):
     
     await message.answer(f"✅ Рассылка завершена!\nОтправлено: {sent}\nНе доставлено: {failed}")
 
-# ========== ИМПОРТ И ПОДКЛЮЧЕНИЕ ДИАЛОГОВ ==========
+# ========== ПОДКЛЮЧЕНИЕ ДИАЛОГОВ ==========
 from dialogs import register_handlers, DialogStates
 
 register_handlers(
