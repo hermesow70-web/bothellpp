@@ -568,9 +568,14 @@ async def cmd_all(message: types.Message):
     
     await message.answer(f"✅ Рассылка завершена!\nОтправлено: {sent}\nНе доставлено: {failed}")
 
-# ========== ИМПОРТ ДИАЛОГОВ ==========
-from dialogs import register_handlers
-register_handlers(dp)
+# ========== ИМПОРТ И ПОДКЛЮЧЕНИЕ ДИАЛОГОВ ==========
+from dialogs import register_handlers, DialogStates
+
+register_handlers(
+    dp, bot,
+    users, admins, dialogs, waiting_queue, pending_by_tag, save_all,
+    is_admin, is_banned, get_user_name, get_admin_tag
+)
 
 # ========== ЗАПУСК ==========
 if __name__ == "__main__":
