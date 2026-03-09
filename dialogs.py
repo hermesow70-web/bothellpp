@@ -3,7 +3,6 @@
 
 """
 Модуль диалогов для бота поддержки
-Обмен сообщениями между пользователями и админами
 """
 
 import asyncio
@@ -67,11 +66,10 @@ async def queue_timeout(user_id: int, bot, dialogs, waiting_queue, save_all):
         except:
             pass
 
-# ========== КНОПКИ ПОЛЬЗОВАТЕЛЯ ==========
+# ========== ОБРАБОТЧИКИ ==========
 async def user_call_random(
     message: types.Message,
-    bot,
-    users, admins, dialogs, waiting_queue, save_all,
+    bot, users, admins, dialogs, waiting_queue, save_all,
     is_banned, get_user_name
 ):
     user_id = message.from_user.id
@@ -95,7 +93,6 @@ async def user_call_random(
     
     asyncio.create_task(queue_timeout(user_id, bot, dialogs, waiting_queue, save_all))
     
-    # Уведомляем всех админов
     for admin_id in admins.keys():
         try:
             await bot.send_message(
@@ -172,7 +169,6 @@ async def process_admin_tag(
     except:
         pass
 
-# ========== КНОПКИ АДМИНА ==========
 async def admin_dialog_list(
     message: types.Message,
     is_admin, admins, waiting_queue, pending_by_tag, get_user_name
@@ -242,11 +238,9 @@ async def process_admin_choice(
     
     user_id = None
     
-    # Сначала проверяем рандомную очередь
     if index < len(waiting_queue):
         user_id = waiting_queue.pop(index)
     else:
-        # Если не нашли, проверяем очередь по тегу
         tag_index = index - len(waiting_queue)
         if str(admin_id) in pending_by_tag and tag_index < len(pending_by_tag[str(admin_id)]):
             user_id = pending_by_tag[str(admin_id)].pop(tag_index)
@@ -255,13 +249,11 @@ async def process_admin_choice(
         await message.answer("❌ Неверный номер.")
         return
     
-    # Создаем диалог
     dialogs[str(user_id)] = str(admin_id)
     save_all()
     
     admin_tag = get_admin_tag(admin_id)
     
-    # Уведомляем пользователя
     try:
         await bot.send_message(
             user_id,
@@ -273,15 +265,13 @@ async def process_admin_choice(
     
     await message.answer(
         f"✅ Вы подключились к пользователю {get_user_name(user_id)}.\n"
-        f"Теперь вы общаетесь. Напишите сообщение, оно уйдет пользователю.",
+        f"Теперь вы общаетесь.",
         reply_markup=dialog_menu()
     )
     
-    # Устанавливаем состояния
     await DialogStates.admin_in_dialog.set()
     await state.update_data(dialog_user_id=user_id)
 
-# ========== ОБРАБОТКА ДИАЛОГОВ ==========
 async def admin_dialog_message(
     message: types.Message, state: FSMContext,
     bot, dialogs, save_all,
@@ -306,8 +296,7 @@ async def admin_dialog_message(
         try:
             await bot.send_message(
                 user_id,
-                "🔚 Администратор завершил диалог.\n\n"
-                "Если админ был груб, напишите #крип и опишите ситуацию."
+                "🔚 Администратор завершил диалог."
             )
         except:
             pass
@@ -324,7 +313,7 @@ async def admin_dialog_message(
             f"{admin_tag}\n{text}"
         )
     except:
-        await message.answer("❌ Не удалось отправить сообщение пользователю.")
+        await message.answer("❌ Не удалось отправить сообщение.")
 
 async def user_dialog_message(
     message: types.Message, state: FSMContext,
@@ -354,10 +343,7 @@ async def user_dialog_message(
         except:
             pass
         
-        await message.answer(
-            "✅ Диалог завершён.\n\n"
-            "Если админ был груб, напишите #крип и опишите ситуацию."
-        )
+        await message.answer("✅ Диалог завершён.")
         await state.finish()
         await message.answer("Главное меню:", reply_markup=main_menu())
         return
@@ -369,9 +355,8 @@ async def user_dialog_message(
             f"{user_name}\n{text}"
         )
     except:
-        await message.answer("❌ Не удалось отправить сообщение администратору.")
+        await message.answer("❌ Не удалось отправить сообщение.")
 
-# ========== НАЗАД ==========
 async def back_to_menu(
     message: types.Message,
     is_admin
@@ -383,16 +368,13 @@ async def back_to_menu(
     else:
         await message.answer("Главное меню:", reply_markup=main_menu())
 
-# ========== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ==========
+# ========== РЕГИСТРАЦИЯ ==========
 def register_handlers(
     dp: Dispatcher,
     bot,
     users, admins, dialogs, waiting_queue, pending_by_tag, save_all,
     is_admin_func, is_banned_func, get_user_name_func, get_admin_tag_func
 ):
-    """Регистрирует все обработчики диалогов"""
-    
-    # Кнопки пользователя
     dp.register_message_handler(
         lambda msg, state: user_call_random(
             msg, bot, users, admins, dialogs, waiting_queue, save_all,
@@ -416,7 +398,6 @@ def register_handlers(
         state=DialogStates.user_waiting_tag
     )
     
-    # Кнопки админа
     dp.register_message_handler(
         lambda msg: admin_dialog_list(
             msg, is_admin_func, admins, waiting_queue, pending_by_tag,
@@ -440,7 +421,6 @@ def register_handlers(
         state=DialogStates.admin_waiting_choice
     )
     
-    # Обработка диалогов
     dp.register_message_handler(
         lambda msg, state: admin_dialog_message(
             msg, state, bot, dialogs, save_all, get_admin_tag_func
@@ -455,7 +435,6 @@ def register_handlers(
         state=DialogStates.user_in_dialog
     )
     
-    # Кнопка "Назад"
     dp.register_message_handler(
         lambda msg: back_to_menu(msg, is_admin_func),
         lambda message: message.text == "◀️ Назад"
