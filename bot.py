@@ -53,6 +53,7 @@ pending_by_tag = load_data("pending_by_tag")
 banlist = load_data("banlist")
 complaints = load_data("complaints")
 
+# Добавляем владельца как ГЛ.АДМИН
 if str(OWNER_ID) not in admins:
     admins[str(OWNER_ID)] = {
         "tag": OWNER_TAG,
@@ -72,23 +73,29 @@ def save_all():
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 def is_admin(user_id: int) -> bool:
+    """Проверка, является ли пользователь админом (любая роль)"""
     return str(user_id) in admins
 
 def is_gl_admin(user_id: int) -> bool:
+    """Проверка, является ли пользователь ГЛ.АДМИНОМ"""
     if str(user_id) not in admins:
         return False
     return admins[str(user_id)].get("role") == "ГЛ.АДМИН"
 
 def is_owner(user_id: int) -> bool:
+    """Проверка, является ли пользователь владельцем"""
     return user_id == OWNER_ID
 
 def is_banned(user_id: int) -> bool:
+    """Проверка, забанен ли пользователь"""
     return str(user_id) in banlist
 
 def get_user_name(user_id: int) -> str:
+    """Получить имя пользователя"""
     return users.get(str(user_id), {}).get("name", "Пользователь")
 
 def get_admin_tag(user_id: int) -> str:
+    """Получить тег админа"""
     return admins.get(str(user_id), {}).get("tag", "#unknown")
 
 # ========== КЛАВИАТУРЫ ==========
@@ -119,6 +126,42 @@ def channel_keyboard():
     kb.add(InlineKeyboardButton("🔔 Подписаться", url=CHANNEL_LINK))
     return kb
 
+# ========== ОБРАБОТКА #КРИП ==========
+@dp.message_handler(lambda message: message.text and message.text.startswith('#крип'))
+async def handle_crip(message: types.Message):
+    user_id = message.from_user.id
+    text = message.text
+    
+    if is_banned(user_id):
+        await message.answer("❌ Вы забанены.")
+        return
+    
+    complaint_id = str(len(complaints) + 1)
+    complaints[complaint_id] = {
+        "user_id": user_id,
+        "user_name": get_user_name(user_id),
+        "text": text,
+        "date": datetime.now().isoformat()
+    }
+    save_all()
+    
+    await message.answer(
+        "✅ Ваша жалоба отправлена ГЛ.АДМИНАМ. Они рассмотрят ситуацию."
+    )
+    
+    # Отправляем жалобу всем ГЛ.АДМИНАМ
+    for aid, data in admins.items():
+        if data.get("role") == "ГЛ.АДМИН" or int(aid) == OWNER_ID:
+            try:
+                await bot.send_message(
+                    int(aid),
+                    f"⚠️ **ЖАЛОБА**\n\n"
+                    f"От: {get_user_name(user_id)} (ID: {user_id})\n"
+                    f"Текст: {text}"
+                )
+            except:
+                pass
+
 # ========== КОМАНДА /START ==========
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
@@ -128,6 +171,7 @@ async def cmd_start(message: types.Message):
         await message.answer("❌ Вы забанены.")
         return
     
+    # Регистрируем нового пользователя
     if str(user_id) not in users:
         users[str(user_id)] = {
             "name": message.from_user.full_name,
@@ -136,6 +180,7 @@ async def cmd_start(message: types.Message):
         }
         save_all()
         
+        # Приветствие для новых пользователей
         await message.answer(
             "👋 *Здравствуй, хочешь тёплого общения? Внимания?*\n\n"
             "❌ *ЗАБУДЬ ДРУГИХ БОТОВ!*\n"
@@ -151,6 +196,21 @@ async def cmd_start(message: types.Message):
             reply_markup=channel_keyboard()
         )
     
+    # Проверяем, есть ли активный диалог
+    if str(user_id) in dialogs:
+        admin_id = dialogs[str(user_id)]
+        if admin_id not in admins:
+            # Если админа больше нет, удаляем диалог
+            del dialogs[str(user_id)]
+            save_all()
+        else:
+            admin_tag = get_admin_tag(int(admin_id))
+            await message.answer(
+                f"🔔 К вам подключился Админ {admin_tag}. Приятного общения!",
+                reply_markup=dialog_menu()
+            )
+            return
+    
     if is_admin(user_id):
         await message.answer("Меню администратора:", reply_markup=admin_menu())
     else:
@@ -162,6 +222,7 @@ async def cmd_end(message: types.Message):
     user_id = message.from_user.id
     user_id_str = str(user_id)
     
+    # Проверяем, есть ли пользователь в диалоге как пользователь
     if user_id_str in dialogs:
         admin_id = int(dialogs[user_id_str])
         del dialogs[user_id_str]
@@ -170,12 +231,17 @@ async def cmd_end(message: types.Message):
         try:
             await bot.send_message(
                 admin_id,
-                "🔚 Пользователь завершил диалог."
+                "🔚 Пользователь завершил диалог.",
+                reply_markup=admin_menu()
             )
         except:
             pass
         
-        await message.answer("✅ Диалог завершён.")
+        await message.answer(
+            "✅ Диалог завершён.\n\n"
+            "Если админ был к вам невежлив, груб или нарушил правила, "
+            "напишите #крип и опишите ситуацию. Ваша жалоба будет рассмотрена."
+        )
         
         if is_admin(user_id):
             await message.answer("Меню:", reply_markup=admin_menu())
@@ -183,6 +249,7 @@ async def cmd_end(message: types.Message):
             await message.answer("Главное меню:", reply_markup=main_menu())
         return
     
+    # Проверяем, есть ли пользователь в диалоге как админ
     for uid, aid in dialogs.items():
         if aid == user_id_str:
             del dialogs[uid]
@@ -191,7 +258,9 @@ async def cmd_end(message: types.Message):
             try:
                 await bot.send_message(
                     int(uid),
-                    "🔚 Администратор завершил диалог."
+                    "🔚 Администратор завершил диалог.\n\n"
+                    "Если админ был к вам невежлив, груб или нарушил правила, "
+                    "напишите #крип и опишите ситуацию. Ваша жалоба будет рассмотрена."
                 )
             except:
                 pass
@@ -206,14 +275,14 @@ async def cmd_end(message: types.Message):
 from dialogs import register_handlers as register_dialog_handlers
 from admin_panel import register_handlers as register_admin_handlers
 
-# Регистрируем обработчики диалогов
+# Регистрируем обработчики диалогов (для всех админов)
 register_dialog_handlers(
     dp, bot,
     users, admins, dialogs, waiting_queue, pending_by_tag, save_all,
     is_admin, is_banned, get_user_name, get_admin_tag
 )
 
-# Регистрируем обработчики админ-панели
+# Регистрируем обработчики админ-панели (только для ГЛ.АДМИНОВ)
 register_admin_handlers(
     dp, bot,
     users, admins, dialogs, banlist, save_all,
